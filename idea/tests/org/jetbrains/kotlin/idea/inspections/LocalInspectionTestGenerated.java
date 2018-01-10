@@ -3479,6 +3479,21 @@ public class LocalInspectionTestGenerated extends AbstractLocalInspectionTest {
                 doTest(fileName);
             }
         }
+
+        @TestMetadata("idea/testData/inspectionsLocal/scopeFunctions/runToLet")
+        @TestDataPath("$PROJECT_ROOT")
+        @RunWith(JUnit3RunnerWithInners.class)
+        public static class RunToLet extends AbstractLocalInspectionTest {
+            public void testAllFilesPresentInRunToLet() throws Exception {
+                KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/testData/inspectionsLocal/scopeFunctions/runToLet"), Pattern.compile("^([\\w\\-_]+)\\.(kt|kts)$"), TargetBackend.ANY, true);
+            }
+
+            @TestMetadata("simple.kt")
+            public void testSimple() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("idea/testData/inspectionsLocal/scopeFunctions/runToLet/simple.kt");
+                doTest(fileName);
+            }
+        }
     }
 
     @TestMetadata("idea/testData/inspectionsLocal/selfAssignment")

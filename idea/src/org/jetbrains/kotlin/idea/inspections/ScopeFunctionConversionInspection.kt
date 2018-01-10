@@ -33,29 +33,42 @@ import org.jetbrains.kotlin.resolve.scopes.LexicalScope
 import org.jetbrains.kotlin.resolve.scopes.utils.collectDescriptorsFiltered
 import org.jetbrains.kotlin.resolve.scopes.utils.findVariable
 
+private val counterpartNames = mapOf(
+    "apply" to "also",
+    "run" to "let"
+)
+
 class ScopeFunctionConversionInspection : AbstractKotlinInspection() {
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
-        return object : KtVisitorVoid() {
-            override fun visitCallExpression(expression: KtCallExpression) {
-                super.visitCallExpression(expression)
-                val callee = expression.calleeExpression as? KtNameReferenceExpression ?: return
-                if (callee.getReferencedName() == "apply" && expression.lambdaArguments.isNotEmpty()) {
-                    val bindingContext = callee.analyze(BodyResolveMode.PARTIAL)
-                    val resolvedCall = callee.getResolvedCall(bindingContext) ?: return
-                    if (resolvedCall.resultingDescriptor.fqNameSafe.asString() == "kotlin.apply" &&
-                        nameResolvesToStdlib(expression, bindingContext, "also")
-                    ) {
-                        holder.registerProblem(
-                            callee,
-                            "Call can be replaced with another scope function",
-                            ProblemHighlightType.INFORMATION,
-                            ConvertToAlsoFix()
-                        )
-                    }
-                }
+        return callExpressionVisitor { expression ->
+            val counterpartWithParameter = getCounterpartWithParameter(expression)
+            if (counterpartWithParameter != null) {
+                holder.registerProblem(
+                    expression.calleeExpression!!,
+                    "Call can be replaced with another scope function",
+                    ProblemHighlightType.INFORMATION,
+                    ConvertScopeFunctionToParameter(counterpartWithParameter)
+                )
             }
+
         }
     }
+}
+
+private fun getCounterpartWithParameter(expression: KtCallExpression): String? {
+    val callee = expression.calleeExpression as? KtNameReferenceExpression ?: return null
+    val calleeName = callee.getReferencedName()
+    if ((calleeName == "apply" || calleeName == "run") && expression.lambdaArguments.isNotEmpty()) {
+        val bindingContext = callee.analyze(BodyResolveMode.PARTIAL)
+        val resolvedCall = callee.getResolvedCall(bindingContext) ?: return null
+        val counterpartName = counterpartNames[calleeName]!!
+        if (resolvedCall.resultingDescriptor.fqNameSafe.asString() == "kotlin.$calleeName" &&
+            nameResolvesToStdlib(expression, bindingContext, counterpartName)
+        ) {
+            return counterpartName
+        }
+    }
+    return null
 }
 
 private fun nameResolvesToStdlib(expression: KtCallExpression, bindingContext: BindingContext, name: String): Boolean {
@@ -64,8 +77,8 @@ private fun nameResolvesToStdlib(expression: KtCallExpression, bindingContext: B
     return descriptors.singleOrNull()?.fqNameSafe?.asString() == "kotlin.$name"
 }
 
-class ConvertToAlsoFix : LocalQuickFix {
-    override fun getFamilyName() = "Convert to 'also'"
+class ConvertScopeFunctionToParameter(private val counterpartName: String) : LocalQuickFix {
+    override fun getFamilyName() = "Convert to '$counterpartName'"
 
     override fun applyFix(project: Project, problemDescriptor: ProblemDescriptor) {
         val callee = problemDescriptor.psiElement as KtNameReferenceExpression
@@ -74,7 +87,7 @@ class ConvertToAlsoFix : LocalQuickFix {
 
         val lambda = callExpression.lambdaArguments.firstOrNull() ?: return
         val parameterToRename = replaceThisWithIt(bindingContext, lambda)
-        callee.replace(KtPsiFactory(project).createExpression("also") as KtNameReferenceExpression)
+        callee.replace(KtPsiFactory(project).createExpression(counterpartName) as KtNameReferenceExpression)
         removeThisLabels(lambda)
 
         if (parameterToRename != null && !ApplicationManager.getApplication().isUnitTestMode) {
