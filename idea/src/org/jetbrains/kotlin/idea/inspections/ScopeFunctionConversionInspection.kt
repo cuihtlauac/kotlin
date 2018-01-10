@@ -21,6 +21,7 @@ import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.createSmartPointer
+import org.jetbrains.kotlin.psi.psiUtil.endOffset
 import org.jetbrains.kotlin.psi.psiUtil.getOrCreateParameterList
 import org.jetbrains.kotlin.psi.psiUtil.startOffset
 import org.jetbrains.kotlin.resolve.BindingContext
@@ -29,6 +30,7 @@ import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.kotlin.resolve.scopes.LexicalScope
+import org.jetbrains.kotlin.resolve.scopes.utils.collectDescriptorsFiltered
 import org.jetbrains.kotlin.resolve.scopes.utils.findVariable
 
 class ScopeFunctionConversionInspection : AbstractKotlinInspection() {
@@ -40,8 +42,9 @@ class ScopeFunctionConversionInspection : AbstractKotlinInspection() {
                 if (callee.getReferencedName() == "apply" && expression.lambdaArguments.isNotEmpty()) {
                     val bindingContext = callee.analyze(BodyResolveMode.PARTIAL)
                     val resolvedCall = callee.getResolvedCall(bindingContext) ?: return
-                    val fqName = resolvedCall.resultingDescriptor.fqNameSafe
-                    if (!fqName.isRoot && fqName.parent().asString() == "kotlin") {
+                    if (resolvedCall.resultingDescriptor.fqNameSafe.asString() == "kotlin.apply" &&
+                        nameResolvesToStdlib(expression, bindingContext, "also")
+                    ) {
                         holder.registerProblem(
                             callee,
                             "Call can be replaced with another scope function",
@@ -53,6 +56,12 @@ class ScopeFunctionConversionInspection : AbstractKotlinInspection() {
             }
         }
     }
+}
+
+private fun nameResolvesToStdlib(expression: KtCallExpression, bindingContext: BindingContext, name: String): Boolean {
+    val scope = expression.getResolutionScope(bindingContext) ?: return true
+    val descriptors = scope.collectDescriptorsFiltered(nameFilter = { it.asString() == name })
+    return descriptors.singleOrNull()?.fqNameSafe?.asString() == "kotlin.$name"
 }
 
 class ConvertToAlsoFix : LocalQuickFix {
@@ -126,6 +135,9 @@ private fun replaceThisWithIt(bindingContext: BindingContext, lambdaArgument: Kt
             val parameterToAdd = factory.createLambdaParameterList(parameterName).parameters.first()
             parameterToRename = lambdaParameterList.addParameterBefore(parameterToAdd, lambdaParameterList.parameters.firstOrNull())
         }
+
+        // Calls need to be processed in outside-in order
+        callsToReplace.sortBy { it.element!!.endOffset }
 
         for (namePointer in nameReferencesToReplace) {
             namePointer.element?.let { element ->

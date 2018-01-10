@@ -3437,6 +3437,12 @@ public class LocalInspectionTestGenerated extends AbstractLocalInspectionTest {
                 KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("idea/testData/inspectionsLocal/scopeFunctions/applyToAlso"), Pattern.compile("^([\\w\\-_]+)\\.(kt|kts)$"), TargetBackend.ANY, true);
             }
 
+            @TestMetadata("doubleNestedLambdas.kt")
+            public void testDoubleNestedLambdas() throws Exception {
+                String fileName = KotlinTestUtils.navigationMetadata("idea/testData/inspectionsLocal/scopeFunctions/applyToAlso/doubleNestedLambdas.kt");
+                doTest(fileName);
+            }
+
             @TestMetadata("innerLambda.kt")
             public void testInnerLambda() throws Exception {
                 String fileName = KotlinTestUtils.navigationMetadata("idea/testData/inspectionsLocal/scopeFunctions/applyToAlso/innerLambda.kt");
