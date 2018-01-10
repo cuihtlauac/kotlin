@@ -13,8 +13,11 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.SmartPsiElementPointer
 import com.intellij.refactoring.rename.inplace.VariableInplaceRenameHandler
+import org.jetbrains.kotlin.descriptors.SimpleFunctionDescriptor
+import org.jetbrains.kotlin.descriptors.ValueParameterDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
 import org.jetbrains.kotlin.idea.core.ShortenReferences
+import org.jetbrains.kotlin.idea.references.resolveMainReferenceToDescriptors
 import org.jetbrains.kotlin.idea.util.getReceiverTargetDescriptor
 import org.jetbrains.kotlin.idea.util.getResolutionScope
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation
@@ -35,19 +38,23 @@ import org.jetbrains.kotlin.resolve.scopes.utils.findVariable
 
 private val counterpartNames = mapOf(
     "apply" to "also",
-    "run" to "let"
+    "run" to "let",
+    "let" to "run"
 )
 
 class ScopeFunctionConversionInspection : AbstractKotlinInspection() {
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean, session: LocalInspectionToolSession): PsiElementVisitor {
         return callExpressionVisitor { expression ->
-            val counterpartWithParameter = getCounterpartWithParameter(expression)
-            if (counterpartWithParameter != null) {
+            val counterpartName = getCounterpart(expression)
+            if (counterpartName != null) {
                 holder.registerProblem(
                     expression.calleeExpression!!,
                     "Call can be replaced with another scope function",
                     ProblemHighlightType.INFORMATION,
-                    ConvertScopeFunctionToParameter(counterpartWithParameter)
+                    if (counterpartName == "also" || counterpartName == "let")
+                        ConvertScopeFunctionToParameter(counterpartName)
+                    else
+                        ConvertScopeFunctionToReceiver(counterpartName)
                 )
             }
 
@@ -55,13 +62,17 @@ class ScopeFunctionConversionInspection : AbstractKotlinInspection() {
     }
 }
 
-private fun getCounterpartWithParameter(expression: KtCallExpression): String? {
+private fun getCounterpart(expression: KtCallExpression): String? {
     val callee = expression.calleeExpression as? KtNameReferenceExpression ?: return null
     val calleeName = callee.getReferencedName()
-    if ((calleeName == "apply" || calleeName == "run") && expression.lambdaArguments.isNotEmpty()) {
+    val counterpartName = counterpartNames[calleeName]
+    val lambdaArgument = expression.lambdaArguments.singleOrNull()
+    if (counterpartName != null && lambdaArgument != null) {
+        if (lambdaArgument.getLambdaExpression().valueParameters.isNotEmpty()) {
+            return null
+        }
         val bindingContext = callee.analyze(BodyResolveMode.PARTIAL)
         val resolvedCall = callee.getResolvedCall(bindingContext) ?: return null
-        val counterpartName = counterpartNames[calleeName]!!
         if (resolvedCall.resultingDescriptor.fqNameSafe.asString() == "kotlin.$calleeName" &&
             nameResolvesToStdlib(expression, bindingContext, counterpartName)
         ) {
@@ -74,10 +85,10 @@ private fun getCounterpartWithParameter(expression: KtCallExpression): String? {
 private fun nameResolvesToStdlib(expression: KtCallExpression, bindingContext: BindingContext, name: String): Boolean {
     val scope = expression.getResolutionScope(bindingContext) ?: return true
     val descriptors = scope.collectDescriptorsFiltered(nameFilter = { it.asString() == name })
-    return descriptors.singleOrNull()?.fqNameSafe?.asString() == "kotlin.$name"
+    return descriptors.isNotEmpty() && descriptors.all { it.fqNameSafe.asString() == "kotlin.$name" }
 }
 
-class ConvertScopeFunctionToParameter(private val counterpartName: String) : LocalQuickFix {
+abstract class ConvertScopeFunctionFix(private val counterpartName: String) : LocalQuickFix {
     override fun getFamilyName() = "Convert to '$counterpartName'"
 
     override fun applyFix(project: Project, problemDescriptor: ProblemDescriptor) {
@@ -86,23 +97,104 @@ class ConvertScopeFunctionToParameter(private val counterpartName: String) : Loc
         val bindingContext = callExpression.analyze()
 
         val lambda = callExpression.lambdaArguments.firstOrNull() ?: return
-        val parameterToRename = replaceThisWithIt(bindingContext, lambda)
+        val functionLiteral = lambda.getLambdaExpression().functionLiteral
+        val lambdaDescriptor = bindingContext[FUNCTION, functionLiteral] ?: return
+
+        val parameterToRename = updateLambda(bindingContext, lambda, lambdaDescriptor)
         callee.replace(KtPsiFactory(project).createExpression(counterpartName) as KtNameReferenceExpression)
-        removeThisLabels(lambda)
+        postprocessLambda(lambda)
 
         if (parameterToRename != null && !ApplicationManager.getApplication().isUnitTestMode) {
             parameterToRename.startInPlaceRename()
         }
     }
+
+    protected abstract fun postprocessLambda(lambda: KtLambdaArgument)
+
+    protected abstract fun updateLambda(
+        bindingContext: BindingContext,
+        lambda: KtLambdaArgument,
+        lambdaDescriptor: SimpleFunctionDescriptor
+    ): KtElement?
 }
 
-private fun replaceThisWithIt(bindingContext: BindingContext, lambdaArgument: KtLambdaArgument): KtParameter? {
+class ConvertScopeFunctionToParameter(counterpartName: String) : ConvertScopeFunctionFix(counterpartName) {
+    override fun updateLambda(
+        bindingContext: BindingContext,
+        lambda: KtLambdaArgument,
+        lambdaDescriptor: SimpleFunctionDescriptor
+    ): KtElement? {
+        return replaceThisWithIt(bindingContext, lambda, lambdaDescriptor)
+    }
+
+    override fun postprocessLambda(lambda: KtLambdaArgument) {
+        ShortenReferences { ShortenReferences.Options(removeThisLabels = true) }.process(lambda) { element ->
+            if (element is KtThisExpression && element.getLabelName() != null)
+                ShortenReferences.FilterResult.PROCESS
+            else
+                ShortenReferences.FilterResult.GO_INSIDE
+        }
+    }
+}
+
+class ConvertScopeFunctionToReceiver(counterpartName: String) : ConvertScopeFunctionFix(counterpartName) {
+    override fun updateLambda(
+        bindingContext: BindingContext,
+        lambda: KtLambdaArgument,
+        lambdaDescriptor: SimpleFunctionDescriptor
+    ): KtElement? {
+        val itUsagesToReplace = mutableListOf<SmartPsiElementPointer<KtSimpleNameExpression>>()
+        val thisUsagesToQualify = mutableListOf<Pair<SmartPsiElementPointer<KtThisExpression>, String>>()
+
+        lambda.accept(object : KtTreeVisitorVoid() {
+            override fun visitSimpleNameExpression(expression: KtSimpleNameExpression) {
+                super.visitSimpleNameExpression(expression)
+                if (expression.getReferencedName() == "it") {
+                    val result = expression.resolveMainReferenceToDescriptors().singleOrNull()
+                    if (result is ValueParameterDescriptor && result.containingDeclaration == lambdaDescriptor) {
+                        itUsagesToReplace.add(expression.createSmartPointer())
+                    }
+                }
+            }
+
+            override fun visitThisExpression(expression: KtThisExpression) {
+                val resolvedCall = expression.getResolvedCall(bindingContext) ?: return
+                val qualifierName = resolvedCall.resultingDescriptor.containingDeclaration.name
+                thisUsagesToQualify.add(expression.createSmartPointer() to qualifierName.asString())
+            }
+        })
+
+        val project = lambda.project
+        val factory = KtPsiFactory(project)
+        for ((thisPointer, qualifier) in thisUsagesToQualify) {
+            thisPointer.element?.replace(factory.createThisExpression(qualifier))
+        }
+        for (itPointer in itUsagesToReplace) {
+            itPointer.element?.replace(factory.createThisExpression())
+        }
+        return null
+    }
+
+    override fun postprocessLambda(lambda: KtLambdaArgument) {
+        ShortenReferences { ShortenReferences.Options(removeThis = true) }.process(lambda) { element ->
+            if (element is KtQualifiedExpression && element.receiverExpression is KtThisExpression)
+                ShortenReferences.FilterResult.PROCESS
+            else
+                ShortenReferences.FilterResult.GO_INSIDE
+        }
+    }
+}
+
+private fun replaceThisWithIt(
+    bindingContext: BindingContext,
+    lambdaArgument: KtLambdaArgument,
+    lambdaDescriptor: SimpleFunctionDescriptor
+): KtParameter? {
     val project = lambdaArgument.project
     val factory = KtPsiFactory(project)
     val functionLiteral = lambdaArgument.getLambdaExpression().functionLiteral
-    val functionDescriptor = bindingContext[FUNCTION, functionLiteral] ?: return null
-    val lambdaExtensionReceiver = functionDescriptor.extensionReceiverParameter
-    val lambdaDispatchReceiver = functionDescriptor.dispatchReceiverParameter
+    val lambdaExtensionReceiver = lambdaDescriptor.extensionReceiverParameter
+    val lambdaDispatchReceiver = lambdaDescriptor.dispatchReceiverParameter
 
     var parameterName = "it"
     var parameterToRename: KtParameter? = null
@@ -121,7 +213,7 @@ private fun replaceThisWithIt(bindingContext: BindingContext, lambdaArgument: Kt
             val resolvedCall = expression.getResolvedCall(bindingContext) ?: return
             val dispatchReceiverTarget = resolvedCall.dispatchReceiver?.getReceiverTargetDescriptor(bindingContext)
             val extensionReceiverTarget = resolvedCall.extensionReceiver?.getReceiverTargetDescriptor(bindingContext)
-            if (dispatchReceiverTarget == functionDescriptor || extensionReceiverTarget == functionDescriptor) {
+            if (dispatchReceiverTarget == lambdaDescriptor || extensionReceiverTarget == lambdaDescriptor) {
                 val parent = expression.parent
                 if (parent is KtCallExpression && expression == parent.calleeExpression) {
                     callsToReplace.add(parent.createSmartPointer())
@@ -214,15 +306,6 @@ private fun KtElement.startInPlaceRename() {
 
         editor.caretModel.moveToOffset(startOffset)
         VariableInplaceRenameHandler().doRename(this, editor, null)
-    }
-}
-
-private fun removeThisLabels(lambdaArgument: KtLambdaArgument) {
-    ShortenReferences { ShortenReferences.Options(removeThisLabels = true) }.process(lambdaArgument) { element ->
-        if (element is KtThisExpression && element.getLabelName() != null)
-            ShortenReferences.FilterResult.PROCESS
-        else
-            ShortenReferences.FilterResult.GO_INSIDE
     }
 }
 
