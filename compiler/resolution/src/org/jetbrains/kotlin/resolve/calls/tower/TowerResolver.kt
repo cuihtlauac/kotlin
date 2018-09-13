@@ -66,7 +66,7 @@ sealed class TowerData {
     class ForLookupForNoExplicitReceiver(val level: ScopeTowerLevel) : TowerData()
 }
 
-interface ScopeTowerProcessor<out C> {
+interface ScopeTowerProcessor<out C : Candidate> {
     // Candidates with matched receivers (dispatch receiver was already matched in ScopeTowerLevel)
     // Candidates in one groups have same priority, first group has highest priority.
     fun process(data: TowerData): List<Collection<C>>

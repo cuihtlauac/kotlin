@@ -23,7 +23,7 @@ import org.jetbrains.kotlin.resolve.scopes.receivers.QualifierReceiver
 import org.jetbrains.kotlin.resolve.scopes.receivers.ReceiverValueWithSmartCastInfo
 
 
-class KnownResultProcessor<out C>(
+class KnownResultProcessor<out C : Candidate>(
     val result: Collection<C>
 ) : ScopeTowerProcessor<C> {
     override fun process(data: TowerData) = if (data == TowerData.Empty) listOfNotNull(result.takeIf { it.isNotEmpty() }) else emptyList()
@@ -32,7 +32,7 @@ class KnownResultProcessor<out C>(
 }
 
 // use this if processors priority is important
-class PrioritizedCompositeScopeTowerProcessor<out C>(
+class PrioritizedCompositeScopeTowerProcessor<out C : Candidate>(
     vararg val processors: ScopeTowerProcessor<C>
 ) : ScopeTowerProcessor<C> {
     override fun process(data: TowerData): List<Collection<C>> = processors.flatMap { it.process(data) }
@@ -44,7 +44,7 @@ class PrioritizedCompositeScopeTowerProcessor<out C>(
 }
 
 // use this if all processors has same priority
-class SamePriorityCompositeScopeTowerProcessor<out C>(
+class SamePriorityCompositeScopeTowerProcessor<out C : Candidate>(
     private vararg val processors: SimpleScopeTowerProcessor<C>
 ) : SimpleScopeTowerProcessor<C> {
     override fun simpleProcess(data: TowerData): Collection<C> = processors.flatMap { it.simpleProcess(data) }
@@ -54,7 +54,7 @@ class SamePriorityCompositeScopeTowerProcessor<out C>(
 
 }
 
-interface SimpleScopeTowerProcessor<out C> : ScopeTowerProcessor<C> {
+interface SimpleScopeTowerProcessor<out C : Candidate> : ScopeTowerProcessor<C> {
     fun simpleProcess(data: TowerData): Collection<C>
 
     override fun process(data: TowerData): List<Collection<C>> = listOfNotNull(simpleProcess(data).takeIf { it.isNotEmpty() })
