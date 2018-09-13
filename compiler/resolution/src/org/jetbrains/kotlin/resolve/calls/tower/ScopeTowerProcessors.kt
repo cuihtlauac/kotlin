@@ -204,6 +204,16 @@ private fun <C : Candidate> createSimpleProcessor(
     return withoutClassValueProcessor
 }
 
+private fun <C : Candidate> createSimpleProcessor(collectCandidates: CandidatesCollector)
+    = {
+        scopeTower: ImplicitScopeTower,
+        context: CandidateFactory<C>,
+        explicitReceiver: DetailedReceiver?,
+        classValueReceiver: Boolean
+    ->
+        createSimpleProcessor(scopeTower, context, explicitReceiver, classValueReceiver, collectCandidates)
+    }
+
 fun <C : Candidate> createCallableReferenceProcessor(
     scopeTower: ImplicitScopeTower,
     name: Name, context: CandidateFactory<C>,
@@ -214,16 +224,13 @@ fun <C : Candidate> createCallableReferenceProcessor(
     return SamePriorityCompositeScopeTowerProcessor(variable, function)
 }
 
-fun <C : Candidate> createVariableProcessor(
-    scopeTower: ImplicitScopeTower, name: Name,
-    context: CandidateFactory<C>, explicitReceiver: DetailedReceiver?, classValueReceiver: Boolean = true
-) = createSimpleProcessor(scopeTower, context, explicitReceiver, classValueReceiver) { getVariables(name, it) }
+fun <C : Candidate> createVariableProcessor(name: Name) = createSimpleProcessor<C> { getVariables(name, it) }
 
 fun <C : Candidate> createVariableAndObjectProcessor(
     scopeTower: ImplicitScopeTower, name: Name,
     context: CandidateFactory<C>, explicitReceiver: DetailedReceiver?, classValueReceiver: Boolean = true
 ) = PrioritizedCompositeScopeTowerProcessor(
-    createVariableProcessor(scopeTower, name, context, explicitReceiver),
+    createVariableProcessor<C>(name)(scopeTower, context, explicitReceiver, classValueReceiver),
     createSimpleProcessor(scopeTower, context, explicitReceiver, classValueReceiver) { getObjects(name, it) }
 )
 
@@ -231,7 +238,6 @@ fun <C : Candidate> createSimpleFunctionProcessor(
     scopeTower: ImplicitScopeTower, name: Name,
     context: CandidateFactory<C>, explicitReceiver: DetailedReceiver?, classValueReceiver: Boolean = true
 ) = createSimpleProcessor(scopeTower, context, explicitReceiver, classValueReceiver) { getFunctions(name, it) }
-
 
 fun <С : Candidate> createFunctionProcessor(
     scopeTower: ImplicitScopeTower,
