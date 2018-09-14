@@ -51,12 +51,14 @@ class KotlinCallResolver(
                 createVariableAndObjectProcessor<KotlinResolutionCandidate>(kotlinCall.name)(scopeTower, candidateFactory, kotlinCall.explicitReceiver?.receiver, true)
             }
             KotlinCallKind.FUNCTION -> {
-                createFunctionProcessor(
-                    scopeTower,
+                createFunctionProcessor<KotlinResolutionCandidate>(
                     kotlinCall.name,
+                    createFactoryProviderForInvoke()
+                )(
+                    scopeTower,
                     candidateFactory,
-                    createFactoryProviderForInvoke(),
-                    kotlinCall.explicitReceiver?.receiver
+                    kotlinCall.explicitReceiver?.receiver,
+                    true
                 )
             }
             KotlinCallKind.INVOKE -> {

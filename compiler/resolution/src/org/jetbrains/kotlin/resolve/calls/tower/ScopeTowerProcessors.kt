@@ -245,35 +245,36 @@ fun <C : Candidate> createVariableAndObjectProcessor(name: Name) =
         createSimpleProcessor<C> { getObjects(name, it) }
     )
 
-fun <C : Candidate> createSimpleFunctionProcessor(
-    scopeTower: ImplicitScopeTower, name: Name,
-    context: CandidateFactory<C>, explicitReceiver: DetailedReceiver?, classValueReceiver: Boolean = true
-) = createSimpleProcessor(scopeTower, context, explicitReceiver, classValueReceiver) { getFunctions(name, it) }
-
 fun <C : Candidate> createSimpleFunctionProcessor(name: Name) = createSimpleProcessor<C> { getFunctions(name, it) }
 
-fun <С : Candidate> createFunctionProcessor(
-    scopeTower: ImplicitScopeTower,
+fun <C : Candidate> createFunctionProcessor(
     name: Name,
-    simpleContext: CandidateFactory<С>,
-    factoryProviderForInvoke: CandidateFactoryProviderForInvoke<С>,
-    explicitReceiver: DetailedReceiver?
-): PrioritizedCompositeScopeTowerProcessor<С> {
-
-    // a.foo() -- simple function call
-    val simpleFunction = createSimpleFunctionProcessor(scopeTower, name, simpleContext, explicitReceiver)
-
-    // a.foo() -- property a.foo + foo.invoke()
-    val invokeProcessor = InvokeTowerProcessor(scopeTower, name, factoryProviderForInvoke, explicitReceiver)
-
-    // a.foo() -- property foo is extension function with receiver a -- a.invoke()
-    val invokeExtensionProcessor = createProcessorWithReceiverValueOrEmpty(explicitReceiver) {
-        InvokeExtensionTowerProcessor(scopeTower, name, factoryProviderForInvoke, it)
-    }
-
-    return PrioritizedCompositeScopeTowerProcessor(simpleFunction, invokeProcessor, invokeExtensionProcessor)
-}
-
+    factoryProviderForInvoke: CandidateFactoryProviderForInvoke<C>
+) =
+    PrioritizedCompositeScopeTowerProcessor.aggreagate(
+        // a.foo() -- simple function call
+        createSimpleFunctionProcessor(name),
+        // a.foo() -- property a.foo + foo.invoke()
+        {
+            scopeTower: ImplicitScopeTower,
+            _: CandidateFactory<C>,
+            explicitReceiver: DetailedReceiver?,
+            _: Boolean
+        ->
+            InvokeTowerProcessor(scopeTower, name, factoryProviderForInvoke, explicitReceiver)
+        },
+        // a.foo() -- property foo is extension function with receiver a -- a.invoke()
+        {
+            scopeTower: ImplicitScopeTower,
+            _: CandidateFactory<C>,
+            explicitReceiver: DetailedReceiver?,
+            _: Boolean
+        ->
+            createProcessorWithReceiverValueOrEmpty(explicitReceiver) {
+                InvokeExtensionTowerProcessor(scopeTower, name, factoryProviderForInvoke, it)
+            }
+        }
+    )
 
 fun <C : Candidate> createProcessorWithReceiverValueOrEmpty(
     explicitReceiver: DetailedReceiver?,

@@ -91,12 +91,14 @@ class NewResolutionOldInference(
                 scopeTower: ImplicitScopeTower, explicitReceiver: DetailedReceiver?, context: BasicCallResolutionContext
             ): ScopeTowerProcessor<MyCandidate> {
                 val functionFactory = outer.CandidateFactoryImpl(name, context, tracing)
-                return createFunctionProcessor(
-                    scopeTower,
+                return createFunctionProcessor<MyCandidate>(
                     name,
+                    outer.CandidateFactoryProviderForInvokeImpl(functionFactory)
+                )(
+                    scopeTower,
                     functionFactory,
-                    outer.CandidateFactoryProviderForInvokeImpl(functionFactory),
-                    explicitReceiver
+                    explicitReceiver,
+                    true
                 )
             }
         }
