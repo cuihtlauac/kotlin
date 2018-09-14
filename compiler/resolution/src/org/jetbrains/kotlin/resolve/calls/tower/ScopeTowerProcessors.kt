@@ -250,6 +250,8 @@ fun <C : Candidate> createSimpleFunctionProcessor(
     context: CandidateFactory<C>, explicitReceiver: DetailedReceiver?, classValueReceiver: Boolean = true
 ) = createSimpleProcessor(scopeTower, context, explicitReceiver, classValueReceiver) { getFunctions(name, it) }
 
+fun <C : Candidate> createSimpleFunctionProcessor(name: Name) = createSimpleProcessor<C> { getFunctions(name, it) }
+
 fun <С : Candidate> createFunctionProcessor(
     scopeTower: ImplicitScopeTower,
     name: Name,
