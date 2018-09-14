@@ -97,7 +97,7 @@ fun createCallableReferenceProcessor(factory: CallableReferencesCandidateFactory
             val static = factory.createCallableProcessor(lhsResult.qualifier)
             val boundObjectReference = factory.createCallableProcessor(lhsResult.objectValueReceiver)
 
-            return SamePriorityCompositeScopeTowerProcessor(static, boundObjectReference)
+            return SamePriorityCompositeScopeTowerProcessor<CallableReferenceCandidate>(static, boundObjectReference)
         }
     }
 }
@@ -156,7 +156,7 @@ class CallableReferencesCandidateFactory(
 ) : CandidateFactory<CallableReferenceCandidate> {
 
     fun createCallableProcessor(explicitReceiver: DetailedReceiver?) =
-        createCallableReferenceProcessor(scopeTower, argument.rhsName, this, explicitReceiver)
+        createCallableReferenceProcessor<CallableReferenceCandidate>(argument.rhsName)(scopeTower, this, explicitReceiver)
 
     override fun createCandidate(
         towerCandidate: CandidateWithBoundDispatchReceiver,

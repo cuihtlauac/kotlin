@@ -64,7 +64,19 @@ class SamePriorityCompositeScopeTowerProcessor<out C : Candidate>(
     override fun recordLookups(skippedData: Collection<TowerData>, name: Name) {
         processors.forEach { it.recordLookups(skippedData, name) }
     }
-
+    companion object {
+        fun <C : Candidate> aggreagate(
+            vararg toProcessors: (ImplicitScopeTower, CandidateFactory<C>, DetailedReceiver?)->SimpleScopeTowerProcessor<C>
+        ) = {
+            scopeTower: ImplicitScopeTower,
+            context: CandidateFactory<C>,
+            explicitReceiver: DetailedReceiver?
+        ->
+            SamePriorityCompositeScopeTowerProcessor<C>(
+                *toProcessors.map { it(scopeTower, context, explicitReceiver) }.toTypedArray()
+            )
+        }
+    }
 }
 
 interface SimpleScopeTowerProcessor<out C : Candidate> : ScopeTowerProcessor<C> {
@@ -197,6 +209,16 @@ private fun <C : Candidate> createSimpleProcessorWithoutClassValueReceiver(
         }
     }
 
+private fun <C : Candidate> createSimpleProcessorWithoutClassValueReceiver(collectCandidates: CandidatesCollector)
+    = {
+        scopeTower: ImplicitScopeTower,
+        context: CandidateFactory<C>,
+        explicitReceiver: DetailedReceiver?
+    ->
+        createSimpleProcessorWithoutClassValueReceiver(scopeTower, context, explicitReceiver, collectCandidates)
+    }
+
+
 private fun <C : Candidate> createSimpleProcessor(
     scopeTower: ImplicitScopeTower,
     context: CandidateFactory<C>,
@@ -227,15 +249,10 @@ private fun <C : Candidate> createSimpleProcessor(collectCandidates: CandidatesC
         createSimpleProcessor(scopeTower, context, explicitReceiver, classValueReceiver, collectCandidates)
     }
 
-fun <C : Candidate> createCallableReferenceProcessor(
-    scopeTower: ImplicitScopeTower,
-    name: Name, context: CandidateFactory<C>,
-    explicitReceiver: DetailedReceiver?
-): SimpleScopeTowerProcessor<C> {
-    val variable = createSimpleProcessorWithoutClassValueReceiver(scopeTower, context, explicitReceiver) { getVariables(name, it) }
-    val function = createSimpleProcessorWithoutClassValueReceiver(scopeTower, context, explicitReceiver) { getFunctions(name, it) }
-    return SamePriorityCompositeScopeTowerProcessor(variable, function)
-}
+fun <C : Candidate> createCallableReferenceProcessor(name: Name) = SamePriorityCompositeScopeTowerProcessor.aggreagate (
+    createSimpleProcessorWithoutClassValueReceiver { getVariables(name, it) },
+    createSimpleProcessorWithoutClassValueReceiver { getFunctions(name, it) }
+) as SamePriorityCompositeScopeTowerProcessor<C>
 
 fun <C : Candidate> createVariableProcessor(name: Name) = createSimpleProcessor<C> { getVariables(name, it) }
 
