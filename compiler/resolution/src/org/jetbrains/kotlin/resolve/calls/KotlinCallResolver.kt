@@ -48,7 +48,7 @@ class KotlinCallResolver(
         val candidateFactory = SimpleCandidateFactory(callComponents, scopeTower, kotlinCall, resolutionCallbacks)
         val processor = when (kotlinCall.callKind) {
             KotlinCallKind.VARIABLE -> {
-                createVariableAndObjectProcessor(scopeTower, kotlinCall.name, candidateFactory, kotlinCall.explicitReceiver?.receiver)
+                createVariableAndObjectProcessor<KotlinResolutionCandidate>(kotlinCall.name)(scopeTower, candidateFactory, kotlinCall.explicitReceiver?.receiver, true)
             }
             KotlinCallKind.FUNCTION -> {
                 createFunctionProcessor(

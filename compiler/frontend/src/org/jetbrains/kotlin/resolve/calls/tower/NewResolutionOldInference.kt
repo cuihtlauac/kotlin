@@ -107,7 +107,7 @@ class NewResolutionOldInference(
                 scopeTower: ImplicitScopeTower, explicitReceiver: DetailedReceiver?, context: BasicCallResolutionContext
             ): ScopeTowerProcessor<MyCandidate> {
                 val variableFactory = outer.CandidateFactoryImpl(name, context, tracing)
-                return createVariableAndObjectProcessor(scopeTower, name, variableFactory, explicitReceiver)
+                return createVariableAndObjectProcessor<MyCandidate>(name)(scopeTower, variableFactory, explicitReceiver, true)
             }
         }
 

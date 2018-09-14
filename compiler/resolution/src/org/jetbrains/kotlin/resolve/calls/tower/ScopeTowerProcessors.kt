@@ -40,7 +40,20 @@ class PrioritizedCompositeScopeTowerProcessor<out C : Candidate>(
     override fun recordLookups(skippedData: Collection<TowerData>, name: Name) {
         processors.forEach { it.recordLookups(skippedData, name) }
     }
-
+    companion object {
+        fun <C : Candidate> aggreagate(
+            vararg toProcessors: (ImplicitScopeTower, CandidateFactory<C>, DetailedReceiver?, Boolean)->ScopeTowerProcessor<C>
+        ) = {
+            scopeTower: ImplicitScopeTower,
+            context: CandidateFactory<C>,
+            explicitReceiver: DetailedReceiver?,
+            classValueReceiver: Boolean
+        ->
+            PrioritizedCompositeScopeTowerProcessor<C>(
+                *toProcessors.map { it(scopeTower, context, explicitReceiver, classValueReceiver) }.toTypedArray()
+            )
+        }
+    }
 }
 
 // use this if all processors has same priority
@@ -226,13 +239,11 @@ fun <C : Candidate> createCallableReferenceProcessor(
 
 fun <C : Candidate> createVariableProcessor(name: Name) = createSimpleProcessor<C> { getVariables(name, it) }
 
-fun <C : Candidate> createVariableAndObjectProcessor(
-    scopeTower: ImplicitScopeTower, name: Name,
-    context: CandidateFactory<C>, explicitReceiver: DetailedReceiver?, classValueReceiver: Boolean = true
-) = PrioritizedCompositeScopeTowerProcessor(
-    createVariableProcessor<C>(name)(scopeTower, context, explicitReceiver, classValueReceiver),
-    createSimpleProcessor(scopeTower, context, explicitReceiver, classValueReceiver) { getObjects(name, it) }
-)
+fun <C : Candidate> createVariableAndObjectProcessor(name: Name) =
+    PrioritizedCompositeScopeTowerProcessor.aggreagate(
+        createVariableProcessor<C>(name),
+        createSimpleProcessor<C> { getObjects(name, it) }
+    )
 
 fun <C : Candidate> createSimpleFunctionProcessor(
     scopeTower: ImplicitScopeTower, name: Name,

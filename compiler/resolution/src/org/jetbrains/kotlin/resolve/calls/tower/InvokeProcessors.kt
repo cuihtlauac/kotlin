@@ -103,11 +103,11 @@ class InvokeTowerProcessor<C : Candidate>(
     explicitReceiver: DetailedReceiver?
 ) : AbstractInvokeTowerProcessor<C>(
     factoryProviderForInvoke,
-    createVariableAndObjectProcessor(
+    createVariableAndObjectProcessor<C>(name)(
         scopeTower,
-        name,
         factoryProviderForInvoke.factoryForVariable(stripExplicitReceiver = false),
-        explicitReceiver
+        explicitReceiver,
+        true
     )
 ) {
 
@@ -144,11 +144,11 @@ class InvokeExtensionTowerProcessor<C : Candidate>(
     private val explicitReceiver: ReceiverValueWithSmartCastInfo?
 ) : AbstractInvokeTowerProcessor<C>(
     factoryProviderForInvoke,
-    createVariableAndObjectProcessor(
+    createVariableAndObjectProcessor<C>(name)(
         scopeTower,
-        name,
         factoryProviderForInvoke.factoryForVariable(stripExplicitReceiver = true),
-        explicitReceiver = null
+        null,
+        true
     )
 ) {
 
